@@ -5,93 +5,68 @@ import serial
 import struct
 import time
 
-# Read input video stream from an IP camera
-url = "http://192.168.34.201:4747/video"  # Replace with your IP camera URL
+# Чтение видеопотока с IP-камеры
+url = "http://192.168.34.201:4747/video"  # URL IP-камеры
 cap = cv2.VideoCapture(url)
 
-# Set video resolution x(optional)
-cap.set(3, 300)
-cap.set(4, 480)
+# Установка разрешения видео (необязательно)
+cap.set(3, 300)  # Ширина
+cap.set(4, 480)  # Высота
 
-# Initialize variables
+# Инициализация переменных
 area = 0
-mx = 0
-xq = 0
+mx = 0  # Максимальная площадь
+xq = 0  # Счетчик цикла
 
-# Initialize serial communication
-ser = serial.Serial('/dev/cu.usbserial-1420', 9600)  # Replace with your serial port
-time.sleep(1)  # Wait for serial port to be ready
+ser = serial.Serial('/dev/cu.usbserial-1420', 9600)  # Порт Arduino
+time.sleep(1)  
 
-while xq < 50:
-    # Capture frame-by-frame
-    ret, frame = cap.read()
-
+while xq < 50:  # Цикл обработки кадров
+    ret, frame = cap.read()  # Чтение кадра
     if not ret:
-        print("Error: Failed to capture frame")
+        print("Ошибка: Не удалось получить кадр")
         break
 
-    # Convert the frame to HSV color space
-    hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+    hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)  
+    lower_blue = np.array([0, 0, 200])  # Нижняя граница синего цвета
+    upper_blue = np.array([180, 30, 255])  # Верхняя граница синего цвета
+    mask = cv2.inRange(hsv, lower_blue, upper_blue)  # Маска для синего цвета
 
-    # Define the lower and upper bounds for blue color
-    lower_blue = np.array([0, 0, 200])
-    upper_blue = np.array([180, 30, 255])
-
-    # Threshold the HSV image to get only blue colors
-    mask = cv2.inRange(hsv, lower_blue, upper_blue)
-
-    # Find contours in the thresholded image
-    cnts = cv2.findContours(mask.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    cnts = cv2.findContours(mask.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)  # Нахождение контуров
     cnts = imutils.grab_contours(cnts)
 
-    # Loop over the contours
-    for c in cnts:
-        # Calculate area of the contour
-        area = cv2.contourArea(c)
+    for c in cnts:  # Цикл по контурам
+        area = cv2.contourArea(c)  # Расчет площади
+        if area > 100:  # Фильтрация по площади
+            cv2.drawContours(frame, [c], -1, (0, 255, 0), 2)  # Рисуем контур
 
-        # Ignore small contours
-        if area > 100:  # Adjust this threshold as needed
-            # Draw contour outline
-            cv2.drawContours(frame, [c], -1, (0, 255, 0), 2)
-
-            # Calculate centroid of the contour
-            M = cv2.moments(c)
+            M = cv2.moments(c)  # Расчет центра масс
             if M["m00"] != 0:
                 cx = int(M["m10"] / M["m00"])
                 cy = int(M["m01"] / M["m00"])
             else:
                 cx, cy = 0, 0
 
-            # Draw centroid
-            cv2.circle(frame, (cx, cy), 5, (255, 255, 255), -1)
+            cv2.circle(frame, (cx, cy), 5, (255, 255, 255), -1)  # Рисуем центр
             cv2.putText(frame, "Center", (cx - 20, cy - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
 
-    # Display the resulting frame
-    cv2.imshow('Webcam', frame)
+    cv2.imshow('Webcam', frame)  # Отображение кадра
 
-    # Update maximum area
-    if area > mx:
+    if area > mx:  # Обновление максимальной площади
         mx = area
-    print("Area:", mx)
+        mx = mx/122.5 * 12
+    print("Площадь:", mx)
 
-    # Send data to Arduino
+    
     float_var = mx
-    ser.write(struct.pack('f', float_var))
-    time.sleep(1)  # Wait for Arduino to process data
+    ser.write(struct.pack('f', float_var))  # Отправка данных
+    time.sleep(1)  # Пауза для обработки данных
 
-    # Wait for 1 second
-    time.sleep(1)
+    xq += 1  # Увеличение счетчика цикла
 
-    # Increment loop counter
-    xq += 1
-
-    # Check for key press; if 'q' is pressed, exit the loop
-    if cv2.waitKey(1) & 0xFF == ord('q'):
+    if cv2.waitKey(1) & 0xFF == ord('q'):  # Выход при нажатии "q"
         break
 
-# Close serial port connection
-ser.close()
-
-# Release the video capture object and close all windows
-cap.release()
-cv2.destroyAllWindows()
+ser.close()  # Закрытие последовательного порта
+cap.release()  # Освобождение видеозахвата
+cv2.destroyAllWindows()  # Закрытие окон
